@@ -6,6 +6,9 @@ Created on Sat Jun 20 13:35:06 2020
 """
 
 import ActionGoToTable
+import sys
+import time
+import copy
 
 #isdigit 함수가 클래스 내부에서 제대로 작동 안해서 만듦
 def new_isdigit(_s):
@@ -31,6 +34,15 @@ class ParsingError(Exception):
     pass
 class UnknownParsingError(Exception):
     pass
+class LexerError(Exception):
+    pass
+class CodeGenerationError(Exception):
+    pass
+
+
+
+
+
 
 class Preprocessor:
     
@@ -59,8 +71,12 @@ class Token:
     
     def __init__(self,_count=-1,_tokenToken="",_tokenType=""):
         self.tokenCount = _count
+        self.tokenValue = _tokenToken
         self.tokenToken = _tokenToken
-        self.tokenType = _tokenType  
+        self.tokenType = _tokenType
+        
+        self.childTokenList = []
+        self.hasChild = False
 
     def __str__(self):
 #        return "token("+self.tokenToken+")"
@@ -70,8 +86,6 @@ class Token:
 #        return "token("+self.tokenToken+")"
         return self.tokenToken
     
-    def isdigit():
-        return false
     
     
     def checkAndAssignTokenType(self):
@@ -160,6 +174,7 @@ class Lexer:
         #end while
             
     def printSplitTable(self):
+        print("\n*********  Inputs  *********\n")
         for i in self.splitTable:
             print(i)
     
@@ -182,7 +197,7 @@ class Lexer:
             #오류인 경우
             if (not token.checkAndAssignTokenType()):
                 print("ToDo 오류 위치 출력 임시용: Error Location --> ",str(indexCounter)+"'s Token, ",str(errorPlaceCounter-len(i))+"'s character")
-                raise ParsingError
+                raise LexerError
                 return False
             
             #정상인 경우
@@ -208,17 +223,26 @@ class Action:
     
     def __init__(self):
         pass
+    
+    popStack = []
 
+    
+    
     @staticmethod
     def pop_stack_2n(_parser,n):
+        Action.popStack = []
         for i in range(0,2*n):
-            _parser.parserStack.pop()
-          
+            Action.popStack.append(_parser.parserStack.pop())
+         
+        
             
     @staticmethod
     def push_stack(_parser,_pushtoken):
         #Todo 이러면 다시 못찾으니까 tree만들때 다시 수정하자
         _pushtoken = Token(-1,_pushtoken,_pushtoken)
+        _pushtoken.hasChild = True
+        _pushtoken.childTokenList = copy.deepcopy(Action.popStack)
+        
         _parser.parserStack.append(_pushtoken)
         
     @staticmethod
@@ -407,25 +431,25 @@ class Parser:
 
     def parseOnce(self):
         
+        self.printStack_n_Input()
         stackTop = self.parserStack[-1]
         inputTop = self.parserInput[0]
         
         action = self.readFromTable(stackTop,inputTop)    
         actionResult = self.doAction(action)
                
-        self.printStack_n_Input()
         
         return actionResult
     
     def readFromTable(self,row,col):
         
-        print("inputROW:",row)
-        print("inputCOL:",col)
+#        print("inputROW:",row)
+#        print("inputCOL:",col)
+#        print("ROW--obj",row)
         
         # GOTO인 경우 (헷갈리네)
-        print("ROW--obj",row)
         if (not new_isdigit(row)):
-            print("here")
+
             col = self.actiongotoTableLabel.index(row.tokenType)
             row = int(self.parserStack[-2])
             action = self.actiongotoTable[row][col]
@@ -436,17 +460,18 @@ class Parser:
             row = int(row)
             action = self.actiongotoTable[row][col]                
             
-        print("ROW",row)
-        print("COL",col)
+#        print("ROW",row)
+#        print("COL",col)
         print("ACTION", action)
             
-        if action[0] == 'a' or action[0].isdigit() or action[0] == 's' or action[0] == 'r':
-            return str(action)
-        
-        elif action == '' :
+        if action == '' :
             print(" ****** Parsing Error, reject\n")
             raise ParsingError
 #            return False    
+        
+        elif action[0] == 'a' or action[0].isdigit() or action[0] == 's' or action[0] == 'r':
+            return str(action)
+        
         else:
             raise UnknownParsingError
         
@@ -467,8 +492,8 @@ class Parser:
 #            print(i.tokenToken, end=" ")
 #        print("] <--Input")
         
-        print("STACK: ",self.parserStack, end="     ")
-        print(self.parserInput,": INPUT")
+        print("STACK---> ",self.parserStack, end="     ")
+        print(self.parserInput,"<--- INPUT")
             
         pass
     
@@ -506,26 +531,252 @@ class Parser:
             Action.reduce(self,actionNum)                    
             return "RUNNING"
         
-        
-            
-            
-        
         else:
             raise UnknownParsingError
 
+class Register:
+    regi = 0
     
-
-# ************  main **************** #
+    def __init__(self,_regNum=0,_regValue=0):
+        self.regNum = _regNum
+        self.regValue = _regValue
+    
+    def Add(self):
+        Register.regi += 1
+        self.regNum = Register.regi
         
-if __name__ == '__main__':
+class CodeGenerator:
     
+    code = []
+    reg = 0
+    
+    
+    def __init__(self,_lexer,_parser):
+        self.parser = _parser
+        self.lexer = _lexer
+        self.head = self.parser.parserStack[1]
+    
+    def traverseTreeFront2Back(self,_token):
+        
+        
+        #if token is leaf node
+        if(type(_token)==str):
+            return
+        
+        if(_token.tokenType == "__STAT__"):
+            self.generateCode_Stat(_token)
+        elif(_token.tokenType == "__COND__"):
+            self.generateCode_Stat(_token)
+            
+        if(_token.hasChild):
+            for i in range(len(_token.childTokenList)-1,0,-1):
+                self.traverseTreeFront2Back(_token.childTokenList[i])
+            
+        else:
+            print(_token)
+            return
+        
+    def traverseTreeBack2Front(self,_token):
+        
+        #if token is leaf node
+        if(type(_token)==str):
+            return
+        
+        
+        if(_token.tokenType == "__STAT__"):
+            self.generateCode_Stat(_token)
+        elif(_token.tokenType == "__COND__"):
+            self.generateCode_Stat(_token)
+            
+            
+        if(_token.hasChild):
+            for i in _token.childTokenList:
+                self.traverseTreeBack2Front(i)
+            
+        else:
+            print(_token)
+            return
+        
+    def generateCode_Fact(self,_token):
+        if(_token.childTokenList[0].tokenType == "__NUM__"):
+ 
+            regiMe = Register()
+            regiMe.regValue = _token.childTokenList[0].tokenValue
+            regiMe.Add()
+            self.code.append("LD REG{0}, {1}".format(regiMe.regNum,regiMe.regValue))
+            
+            return regiMe
+            
+        elif(_token.childTokenList[0].tokenType == "__WORD__"):
+            
+            regiMe = Register()
+            regiMe.regValue = _token.childTokenList[0].tokenValue
+            regiMe.Add()
+            self.code.append("LD REG{0}, {1}".format(regiMe.regNum,regiMe.regValue))
+            
+            return regiMe
+        
+        else:
+            print("FACT generation ERROR");
+            raise CodeGenerationError
+        
+    
+    def generateCode_Term(self,_token):
+        
+        if( len(_token.childTokenList) == 1):
+            
+            regiSon = self.generateCode_Fact(_token.childTokenList[0])
+                        
+            regiMe = Register()
+            regiMe.regValue = regiSon.regValue
+            regiMe.Add()
+            
+        
+            self.code.append("LD REG{0}, REG{1}".format(regiMe.regNum,regiSon.regNum))
+
+            
+            return regiMe
+        
+        
+        elif( len(_token.childTokenList) == 3):
+        
+            regiSon1 = self.generateCode_Fact(_token.childTokenList[0])
+            regiSon2 = self.generateCode_Fact(_token.childTokenList[2])
+            
+            regiMe = Register()
+            regiMe.regValue = regiSon2.regValue * regiSon1.regValue
+            regiMe.Add()
+            
+            self.code.append("MUL REG{0}, REG{1}, REG{2}".format(regiMe.regNum,regiSon1.regNum,regiSon2.regNum))
+            
+            return regiMe
+            
+            
+        else:
+            print("FACT generation ERROR");
+            raise CodeGenerationError
+                
+            
+    def generateCode_Expr(self,_token):
+        
+        if( len(_token.childTokenList) == 1):
+        
+            regiSon = self.generateCode_Term(_token.childTokenList[0])
+            
+            regiMe = Register()
+            regiMe.regValue = regiSon.regValue
+            regiMe.Add()
+            
+            self.code.append("LD REG{0}, REG{1}".format(regiMe.regNum,regiSon.regNum))
+            
+            return regiMe        
+        
+        elif( len(_token.childTokenList) == 3):
+        
+            regiSon1 = self.generateCode_Term(_token.childTokenList[0])
+            regiSon2 = self.generateCode_Term(_token.childTokenList[2])
+            
+            regiMe = Register()
+            regiMe.regValue = regiSon2.regValue +regiSon1.regValue
+            regiMe.Add()
+            
+            self.code.append("ADD REG{0}, REG{1}, REG{2}".format(regiMe.regNum,regiSon1.regNum,regiSon2.regNum))
+            
+            return regiMe
+        
+        
+    def generateCode_Cond(self,_token):
+        
+        if( _token.childTokenList[1].tokenValue == ">" ):
+        
+            regiSon1 = self.generateCode_Expr(_token.childTokenList[0])
+            regiSon2 = self.generateCode_Expr(_token.childTokenList[2])
+            
+            regiMe = Register()
+            
+            tmp = (regiSon1.regValue > regiSon2.regValue)
+            
+            if(tmp):
+                regiMe.regValue = 1
+            else:
+                regiMe.regValue = 0
+                
+            regiMe.Add()
+            
+            self.code.append("LT REG{0}, REG{1}, REG{2}".format(regiMe.regNum,regiSon1.regNum,regiSon2.regNum))
+            
+            return regiMe        
+        
+        elif( _token.childTokenList[1].tokenValue == "==" ):
+        
+            regiSon1 = self.generateCode_Expr(_token.childTokenList[0])
+            regiSon2 = self.generateCode_Expr(_token.childTokenList[2])
+            
+            regiMe = Register()
+            
+            tmp = (regiSon1.regValue == regiSon2.regValue)
+            
+            if(tmp):
+                regiMe.regValue = 1
+            else:
+                regiMe.regValue = 0
+                
+            regiMe.Add()
+            
+            self.code.append("LT REG{0}, REG{1}, REG{2}".format(regiMe.regNum,regiSon1.regNum,regiSon2.regNum))
+            
+            return regiMe        
+
+        
+    def generateCode_Stat(self,_token):
+        
+        #IF cond THEN block ELSE block
+        #WHILE cond block
+        #RETURN expr ;
+#        print(_token.childTokenList)
+        if(_token.childTokenList[0].tokenValue=="RETURN"):
+            return
+        
+            if(_token.childTokenList[0].tokenValue=="RETURN"):
+                 
+                
+                regiSon = self.generateCode_Expr(_token.childTokenList[1])
+                regiMe = Register()
+                regiMe.regValue = regiSon.regValue
+                regiMe.Add()
+                self.code.append("LD REG{0}, {1}".format(regiMe.regNum,regiSon.regValue))
+                
+                return regiMe
+                
+        
+        # word = expr ;
+        elif(_token.childTokenList[0].tokenType=="__EXPR__"):
+                            
+            regiSon = self.generateCode_Expr(_token.childTokenList[3])
+            regiMe = Register()
+            regiMe.regValue = regiSon.regValue
+            regiMe.Add()
+            self.code.append("LD REG{0}, {1}".format(regiMe.regNum,regiSon.regValue))
+            
+            return regiMe
+            
+    
+            pass
+        
+        return
+        
+        
+        
+        
+# ************  main **************** #
+if __name__ == '__main__':
     try:
         ## input Source Code
 #        inputStream = "__WORD__ ( ) { int __WORD__ , __WORD__ ; __WORD__ = __NUM__ ; RETURN __NUM__ ; } "
-        inputStream = "wordOne ( ) { int wordTwo , wordThree ; wordFour = 1111 ; RETURN 2222 ; }"
-    
+#        inputStream = "myfunction ( ) { int numberVar , one ; char A , apple ; TwoHundred = 200 ; RETURN 2020 ; }"
+        inputStream = " ".join(sys.argv[1:])
         
-        ## preprocessing.   
+        ## Preprocessing.   
     
         preprocessor = Preprocessor(inputStream)
         inputStream = preprocessor.process()
@@ -535,20 +786,35 @@ if __name__ == '__main__':
         lexer = Lexer(inputStream)
         lexer.makeSplitTable() 
         lexer.printSplitTable()
-        assert(lexer.makeTokenTableAndCheckError(DISTINCT = False)) #여기에서 오류검출함
+        lexer.makeTokenTableAndCheckError(DISTINCT = False) #여기에서 오류검출함
         lexer.printTokenTable()
-    #    lexer.printTokenTable_CSV()
         
-        ## syntactic anlysis
+        ## Syntactic anlysis
         
         parser = Parser(lexer)
         parser.parse() #return only on success
         
-        print("\nParsing Success... Ending Programm... \n2017314789 이민규\n")
+        print("\nParsing Success... Ending Programm... \n2017314789 이민규\n2016313561 서운지\n\n")
 
 
+#        ## Code Generation
+#        codeGenerator = CodeGenerator(lexer,parser)
+#        codeGenerator.traverseTreeFront2Back(parser.parserStack[1])
+
+        time.sleep(10)
 
     except ParsingError:
-        print("Parsing Fail...  \n2017314789 이민규\n")
+        print("Parsing Fail...  \n2017314789 이민규\n2016313561 서운지\n")
+        time.sleep(10)
     except UnknownParsingError:
-        print("Fatal Parse Error... Something went wrong in source code... probably my mistake :( \n2017314789 이민규\n")
+        print("Fatal Parse Error... Something went wrong in source code... probably my mistake :( \n2017314789 이민규\n2016313561 서운지\n")
+        time.sleep(10)
+    except LexerError:
+        print("Lexer Error...\n2017314789 이민규\n2016313561 서운지\n")
+        time.sleep(10)
+        
+    except CodeGenerationError:
+        print("CodeGenerationError Error...\n2017314789 이민규\n2016313561 서운지\n")
+        time.sleep(10)
+        
+        
