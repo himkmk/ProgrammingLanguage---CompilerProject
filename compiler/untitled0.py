@@ -1,3 +1,4 @@
+__START__ -> __PROG__
 __PROG__ -> __WORD__ ( ) __BLOCK__
 
 __DECLS__ -> __DECLS__ __DECL__
