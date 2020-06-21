@@ -41,9 +41,9 @@ def generateTablefromCSV():
 #    return label 
 
 LABEL = \
-['LABLE', '__WORD__', '(', ')', ';', ',', 'int', 'char', '{', '}', \
+['LABLE_PLACEHOLDER', '__WORD__', '(', ')', ';', ',', 'int', 'char', '{', '}', \
  'IF', '-', 'THEN', 'ELSE', 'WHILE', '=', 'RETURN', '>', '==', '+', '*', \
- '__FACT', '__NUM__', '$', '__PROG__', '__DECLS__', '__DECL__', '__WORDS__', \
+ '__FACT__', '__NUM__', '$', '__PROG__', '__DECLS__', '__DECL__', '__WORDS__', \
  '__VTYPE__', '__BLOCK__', '__SLIST__', '__STAT__', '__COND__', '__EXPR__', '__TERM__']
 
 TABLE = \
