@@ -38,6 +38,16 @@ class LexerError(Exception):
     pass
 class CodeGenerationError(Exception):
     pass
+class StringMultiplicationError(Exception):
+    pass
+class VariableRedefinitionError(Exception):
+    pass
+class UndefinedVariableError(Exception):
+    pass
+class EX101(Exception):
+    pass
+class EX102(Exception):
+    pass
 
 
 
@@ -77,6 +87,7 @@ class Token:
         
         self.childTokenList = []
         self.hasChild = False
+        self.codeMade = False
 
     def __str__(self):
 #        return "token("+self.tokenToken+")"
@@ -231,17 +242,19 @@ class Action:
     @staticmethod
     def pop_stack_2n(_parser,n):
         Action.popStack = []
-        for i in range(0,2*n):
+        for i in range(0,n):
+            _parser.parserStack.pop()
             Action.popStack.append(_parser.parserStack.pop())
-         
+            
+            
         
             
     @staticmethod
     def push_stack(_parser,_pushtoken):
-        #Todo 이러면 다시 못찾으니까 tree만들때 다시 수정하자
         _pushtoken = Token(-1,_pushtoken,_pushtoken)
         _pushtoken.hasChild = True
         _pushtoken.childTokenList = copy.deepcopy(Action.popStack)
+        _pushtoken.childTokenList.reverse()
         
         _parser.parserStack.append(_pushtoken)
         
@@ -548,6 +561,7 @@ class Register:
 class CodeGenerator:
     
     code = []
+    symbol = []
     reg = 0
     
     
@@ -556,54 +570,48 @@ class CodeGenerator:
         self.lexer = _lexer
         self.head = self.parser.parserStack[1]
     
+    def printIntermediateCode(self):
+        print("***** Intermediate Code *******")
+        for i in self.code:
+            print(i)
+        print("")
+        
+    def printOutIntermediateCode(self,_filename):
+        
+        infile = open(_filename+'.code','w',encoding='UTF8')
+        
+        for i in self.code:
+            infile.writelines(i + "\n")
+    
+        infile.close()
+    
     def traverseTreeFront2Back(self,_token):
-        
-        
+
         #if token is leaf node
         if(type(_token)==str):
             return
-        
-        if(_token.tokenType == "__STAT__"):
-            self.generateCode_Stat(_token)
-        elif(_token.tokenType == "__COND__"):
-            self.generateCode_Stat(_token)
-            
-        if(_token.hasChild):
-            for i in range(len(_token.childTokenList)-1,0,-1):
-                self.traverseTreeFront2Back(_token.childTokenList[i])
-            
-        else:
-            print(_token)
-            return
-        
-    def traverseTreeBack2Front(self,_token):
-        
-        #if token is leaf node
-        if(type(_token)==str):
-            return
-        
-        
-        if(_token.tokenType == "__STAT__"):
-            self.generateCode_Stat(_token)
-        elif(_token.tokenType == "__COND__"):
-            self.generateCode_Stat(_token)
-            
+#        
+        if(not _token.codeMade):
+            if(_token.tokenType == "__PROG__"):
+                self.generateCode_Prog(_token)
             
         if(_token.hasChild):
             for i in _token.childTokenList:
-                self.traverseTreeBack2Front(i)
+                self.traverseTreeFront2Back(i)
             
         else:
-            print(_token)
+            #print(_token)
             return
         
     def generateCode_Fact(self,_token):
+        #print(" WOW FACT-->" , _token.childTokenList)
+        
         if(_token.childTokenList[0].tokenType == "__NUM__"):
  
             regiMe = Register()
             regiMe.regValue = _token.childTokenList[0].tokenValue
             regiMe.Add()
-            self.code.append("LD REG{0}, {1}".format(regiMe.regNum,regiMe.regValue))
+            self.code.append("LD REG{0}, ${1}".format(regiMe.regNum,regiMe.regValue))
             
             return regiMe
             
@@ -612,7 +620,7 @@ class CodeGenerator:
             regiMe = Register()
             regiMe.regValue = _token.childTokenList[0].tokenValue
             regiMe.Add()
-            self.code.append("LD REG{0}, {1}".format(regiMe.regNum,regiMe.regValue))
+            self.code.append("LD REG{0}, &{1}".format(regiMe.regNum,regiMe.regValue))
             
             return regiMe
         
@@ -622,6 +630,8 @@ class CodeGenerator:
         
     
     def generateCode_Term(self,_token):
+        
+        #print(" WOW TERM-->" , _token.childTokenList)
         
         if( len(_token.childTokenList) == 1):
             
@@ -644,7 +654,13 @@ class CodeGenerator:
             regiSon2 = self.generateCode_Fact(_token.childTokenList[2])
             
             regiMe = Register()
-            regiMe.regValue = regiSon2.regValue * regiSon1.regValue
+            
+            if (regiSon1.regValue).isdigit() and regiSon2.regValue.isdigit():
+                regiMe.regValue = str(int(regiSon2.regValue) * int(regiSon1.regValue))
+            
+            else:
+                raise StringMultiplicationError
+            
             regiMe.Add()
             
             self.code.append("MUL REG{0}, REG{1}, REG{2}".format(regiMe.regNum,regiSon1.regNum,regiSon2.regNum))
@@ -658,6 +674,8 @@ class CodeGenerator:
                 
             
     def generateCode_Expr(self,_token):
+        
+        #print(" WOW EXPR-->" , _token.childTokenList)
         
         if( len(_token.childTokenList) == 1):
         
@@ -677,7 +695,7 @@ class CodeGenerator:
             regiSon2 = self.generateCode_Term(_token.childTokenList[2])
             
             regiMe = Register()
-            regiMe.regValue = regiSon2.regValue +regiSon1.regValue
+            regiMe.regValue = regiSon1.regValue +regiSon2.regValue
             regiMe.Add()
             
             self.code.append("ADD REG{0}, REG{1}, REG{2}".format(regiMe.regNum,regiSon1.regNum,regiSon2.regNum))
@@ -686,6 +704,8 @@ class CodeGenerator:
         
         
     def generateCode_Cond(self,_token):
+        
+        #print(" WOW COND-->" , _token.childTokenList)
         
         if( _token.childTokenList[1].tokenValue == ">" ):
         
@@ -730,51 +750,163 @@ class CodeGenerator:
         
     def generateCode_Stat(self,_token):
         
-        #IF cond THEN block ELSE block
-        #WHILE cond block
-        #RETURN expr ;
+        #print(" WOW STAT-->" , _token.childTokenList)
+        
+        #Stat -> IF cond THEN block ELSE block
+        #Stat -> WHILE cond block
+        #Stat -> RETURN expr ;
 #        print(_token.childTokenList)
-        if(_token.childTokenList[0].tokenValue=="RETURN"):
-            return
-        
-            if(_token.childTokenList[0].tokenValue=="RETURN"):
-                 
+        if(_token.childTokenList[0].tokenType=="RETURN"):
                 
-                regiSon = self.generateCode_Expr(_token.childTokenList[1])
-                regiMe = Register()
-                regiMe.regValue = regiSon.regValue
-                regiMe.Add()
-                self.code.append("LD REG{0}, {1}".format(regiMe.regNum,regiSon.regValue))
-                
-                return regiMe
-                
-        
-        # word = expr ;
-        elif(_token.childTokenList[0].tokenType=="__EXPR__"):
-                            
-            regiSon = self.generateCode_Expr(_token.childTokenList[3])
+            regiSon = self.generateCode_Expr(_token.childTokenList[1])
             regiMe = Register()
             regiMe.regValue = regiSon.regValue
             regiMe.Add()
-            self.code.append("LD REG{0}, {1}".format(regiMe.regNum,regiSon.regValue))
-            
+            self.code.append("LD %eax{0}, REG{1}".format(regiMe.regNum,regiSon.regNum))
+            self.storeSymbol(self.symbol[0][0].tokenValue, regiMe.regValue+" (%eax)")
             return regiMe
+        #Stat -> Word  = Expr
+        elif(_token.childTokenList[0].tokenType=="__WORD__"):
+                
+            regiSon = self.generateCode_Expr(_token.childTokenList[2])
+#            regiMe = Register()
+#            regiMe.regValue = regiSon.regValue
+#            regiMe.Add()
             
-    
-            pass
+            self.storeSymbol(_token.childTokenList[0].tokenValue,regiSon.regValue)
+            self.code.append("ST &{0}, REG{1}".format(_token.childTokenList[0].tokenValue,regiSon.regNum))
+            
+#            return regiMe
+
+    def generateCode_Decls(self,_token):
+        
+        #print(" WOW Decls-->" , _token.childTokenList)
+        
+        if(not _token.childTokenList):
+            return
+        
+        else:
+            self.generateCode_Decls(_token.childTokenList[0])
+            self.generateCode_Decl(_token.childTokenList[1])
         
         return
+    
+    def generateCode_Decl(self,_token):
+        
+        #print(" WOW Decl-->" , _token.childTokenList)
         
         
+        if(_token.childTokenList[0].childTokenList[0].tokenValue == "int"):
+            tmp_type = "__INTEGER__"
+        else:
+            tmp_type = "__CHARACTER__"
+            
+        self.generateCode_Words(_token.childTokenList[1],tmp_type)
         
+    
+    def generateCode_Words(self,_token,_type):
+        #print(" WOW Words-->" , _token.childTokenList)
+        
+        # Words -> Word
+        if(_token.childTokenList[0].tokenType == "__WORD__"):
+            self.generateCode_Word(_token.childTokenList[0],_type)
+        
+        # Words -> Words Word
+        else:
+            self.generateCode_Words(_token.childTokenList[0],_type)
+            self.generateCode_Word(_token.childTokenList[2],_type)
+        
+    def generateCode_Word(self,_token,_type):
+
+        if(self.checkRedundantSymbol(_token)):
+            raise VariableRedefinitionError
+            
+        CodeGenerator.symbol.append([_token,_type,0])
+                    
+    def generateCode_Slist(self,_token):
+        #print(" WOW Slist-->" , _token.childTokenList)
+        
+        # Slist -> Slist Stat
+        if(_token.childTokenList[0].tokenType == "__SLIST__"):
+            self.generateCode_Slist(_token.childTokenList[0])
+            self.generateCode_Stat(_token.childTokenList[1])
+        
+        # Slist -> Slist
+        else:
+            self.generateCode_Stat(_token.childTokenList[0])
+    
+    def generateCode_Block(self,_token):
+        
+        self.generateCode_Decls(_token.childTokenList[1])
+        self.generateCode_Slist(_token.childTokenList[2])
+
+    def generateCode_Prog(self,_token):
+     
+        self.generateCode_Word(_token.childTokenList[0],"__FUNCTION__")
+        self.generateCode_Block(_token.childTokenList[3])
+    
+    def checkRedundantSymbol(self,_token):
+        
+        for i in CodeGenerator.symbol:
+            if(_token.tokenValue == i[0].tokenValue):
+                print("\n\n***Redefinition of ",_token.tokenValue)
+                return True
+        return False
+    
+    def storeSymbol(self,_tokenName,_value):
+        
+        for i in CodeGenerator.symbol:
+            if(_tokenName == i[0].tokenValue):
+                i[2] = _value
+                return
+        
+        raise UndefinedVariableError
+    
+    def printSymbolTable(self):
+        
+        print("\n****** Symbol Table ******")
+        print("NAME".ljust(20),"TYPE".ljust(20),"VALUE".ljust(20))
+        
+        for i in self.symbol:
+            print(i[0].tokenValue.ljust(20),i[1].ljust(20),str(i[2]).ljust(20))
+    
+    
+    def printOutSymbolTable(self,_filename):
+    
+        infile = open(_filename+'.symbol','w',encoding='UTF8')
+        
+        infile.writelines("NAME".ljust(20)+"TYPE".ljust(20)+"VALUE".ljust(40)+"\n")
+        for i in self.symbol:
+            infile.writelines(i[0].tokenValue.ljust(20)+i[1].ljust(20)+str(i[2]).ljust(40)+"\n")
+    
+        infile.close()
+
+class FileReader:
+    
+    @staticmethod
+    def readFile(_filename):
+
+        fileData = ""
+        
+        infile = open(_filename,'r',encoding='UTF8')
+        lines = infile.readlines()
+        for i in lines:
+            fileData+=i
+        infile.close()
+        
+        return fileData
         
 # ************  main **************** #
 if __name__ == '__main__':
     try:
         ## input Source Code
 #        inputStream = "__WORD__ ( ) { int __WORD__ , __WORD__ ; __WORD__ = __NUM__ ; RETURN __NUM__ ; } "
-#        inputStream = "myfunction ( ) { int numberVar , one ; char A , apple ; TwoHundred = 200 ; RETURN 2020 ; }"
-        inputStream = " ".join(sys.argv[1:])
+        inputFile = sys.argv[1]
+        inputStream = FileReader.readFile(inputFile)
+        inputFile = inputFile.split('.')
+        inputFile = inputFile[0]
+#        inputStream = "myfunction ( ) { int numOne , numTwo  ; char Apple , Banana ; Banana = Yellow ; Apple = PenPineapple + ApplePen ; numOne = 7 ; RETURN 1010 * 2 ; }"
+        
         
         ## Preprocessing.   
     
@@ -797,24 +929,49 @@ if __name__ == '__main__':
         print("\nParsing Success... Ending Programm... \n2017314789 이민규\n2016313561 서운지\n\n")
 
 
-#        ## Code Generation
-#        codeGenerator = CodeGenerator(lexer,parser)
-#        codeGenerator.traverseTreeFront2Back(parser.parserStack[1])
+        ## Code Generation
+        codeGenerator = CodeGenerator(lexer,parser)
+        codeGenerator.traverseTreeFront2Back(parser.parserStack[1])
+        codeGenerator.printIntermediateCode()
+        codeGenerator.printOutIntermediateCode(inputFile)
+        codeGenerator.printSymbolTable()
+        codeGenerator.printOutSymbolTable(inputFile)
 
+        
+        
+        print(inputStream)
         time.sleep(10)
 
     except ParsingError:
-        print("Parsing Fail...  \n2017314789 이민규\n2016313561 서운지\n")
+        print("\nParsing Fail...  \n2017314789 이민규\n2016313561 서운지\n")
         time.sleep(10)
     except UnknownParsingError:
-        print("Fatal Parse Error... Something went wrong in source code... probably my mistake :( \n2017314789 이민규\n2016313561 서운지\n")
+        print("\nFatal Parse Error... Something went wrong in source code... probably my mistake :( \n2017314789 이민규\n2016313561 서운지\n")
         time.sleep(10)
     except LexerError:
-        print("Lexer Error...\n2017314789 이민규\n2016313561 서운지\n")
+        print("\nLexer Error...\n2017314789 이민규\n2016313561 서운지\n")
+        time.sleep(10)
+    except CodeGenerationError:
+        print("\nCodeGeneration Error...\n2017314789 이민규\n2016313561 서운지\n")
+        time.sleep(10)
+    except StringMultiplicationError:
+        print("\nStringMultiplicationError! Can only multiply __NUM__ and __NUM__...\n2017314789 이민규\n2016313561 서운지\n")
+        time.sleep(10)    
+    except VariableRedefinitionError:
+        print("VariableRedefinitionError! Can define Same variable only once...\n2017314789 이민규\n2016313561 서운지\n")
+        time.sleep(10)
+    except UndefinedVariableError:
+        print("\nUndefinedVariableError! Tried to access or assign undefined variable\n2017314789 이민규\n2016313561 서운지\n")
         time.sleep(10)
         
-    except CodeGenerationError:
-        print("CodeGenerationError Error...\n2017314789 이민규\n2016313561 서운지\n")
+        
+    ##임시용    
+    except EX101:
+        print("\nEX101\n2017314789 이민규\n2016313561 서운지\n")
         time.sleep(10)
+    except EX102:
+        print("\nEX102\n2017314789 이민규\n2016313561 서운지\n")
+        time.sleep(10)
+        
         
         
